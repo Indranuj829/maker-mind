@@ -1,4 +1,6 @@
 # maker-mind
+// Self-Voting Machine (Useless Voting System) - Final Improved Version
+
 const int buttonA = 2;
 const int buttonB = 3;
 const int buttonC = 4;
@@ -6,19 +8,20 @@ const int buttonC = 4;
 const int ledA = 6;
 const int ledB = 7;
 const int ledC = 8;
-const int buzzer = 9;
-const int winnerLED = 10;
+const int ledWinner = 9;
+const int buzzer = 10;
 
 int voteCountA = 0;
 int voteCountB = 0;
 int voteCountC = 0;
 
-unsigned long lastVoteTime = 0;
-const unsigned long voteDuration = 20000; // 20 seconds
-const unsigned long voteDelay = 5000; // 5 seconds
-const unsigned long serialDelay = 4000; // 4 seconds
+bool systemActive = true;
+bool awaitingRestart = false;
+unsigned long lastResetTime = 0;
+const unsigned long resetInterval = 10000; // 10 seconds
 
-bool votingEnabled = true;
+int buttonPressCount = 0;
+bool wasPressedAll = false;
 
 void setup() {
   pinMode(buttonA, INPUT_PULLUP);
@@ -28,121 +31,107 @@ void setup() {
   pinMode(ledA, OUTPUT);
   pinMode(ledB, OUTPUT);
   pinMode(ledC, OUTPUT);
+  pinMode(ledWinner, OUTPUT);
   pinMode(buzzer, OUTPUT);
-  pinMode(winnerLED, OUTPUT);
 
   Serial.begin(9600);
   randomSeed(analogRead(0));
-  lastVoteTime = millis();
 
-  Serial.println("Voting system started...");
-  delay(serialDelay);
+  delay(5000);
+  Serial.println("🗳️ Self-Voting Machine Initialized!");
+  delay(5000);
 }
 
 void loop() {
-  if (!votingEnabled) {
-    if (checkAllButtonsPressedOnce()) {
-      votingEnabled = true;
-      Serial.println("System started again!");
-      delay(serialDelay);
-    }
+  if (!systemActive) {
+    checkRestartCondition();
     return;
   }
 
-  if (checkAllButtonsPressedTwice()) {
-    votingEnabled = false;
-    Serial.println("System stopped!");
-    delay(serialDelay);
-    return;
-  }
+  bool buttonAState = digitalRead(buttonA) == LOW;
+  bool buttonBState = digitalRead(buttonB) == LOW;
+  bool buttonCState = digitalRead(buttonC) == LOW;
 
-  if (millis() - lastVoteTime >= voteDuration) {
-    announceResult();
-    resetVotes();
-    lastVoteTime = millis();
-  }
+  if (buttonAState || buttonBState || buttonCState) {
+    delay(5000); // 5 seconds voting delay
 
-  // Check for vote
-  if (digitalRead(buttonA) == LOW || digitalRead(buttonB) == LOW || digitalRead(buttonC) == LOW) {
-    delay(50); // debounce
-    int winner = -1;
-
-    if (random(0, 2) == 0) {
-      // System vote
-      winner = random(0, 3);
-      Serial.println("System voted...");
+    if (random(0, 100) < 50) {
+      if (buttonAState) {
+        voteCountA++;
+        Serial.println("🧑 Your vote counted for A!");
+      } else if (buttonBState) {
+        voteCountB++;
+        Serial.println("🧑 Your vote counted for B!");
+      } else if (buttonCState) {
+        voteCountC++;
+        Serial.println("🧑 Your vote counted for C!");
+      }
     } else {
-      // Only register if button is pressed
-      if (digitalRead(buttonA) == LOW) {
-        winner = 0;
-        Serial.println("User voted for A");
-      } else if (digitalRead(buttonB) == LOW) {
-        winner = 1;
-        Serial.println("User voted for B");
-      } else if (digitalRead(buttonC) == LOW) {
-        winner = 2;
-        Serial.println("User voted for C");
+      int randomVote = random(0, 3);
+      if (randomVote == 0) {
+        voteCountA++;
+        Serial.println("🤖 System randomly voted for A.");
+      } else if (randomVote == 1) {
+        voteCountB++;
+        Serial.println("🤖 System randomly voted for B.");
+      } else {
+        voteCountC++;
+        Serial.println("🤖 System randomly voted for C.");
       }
     }
 
-    delay(serialDelay);
-
-    // Count the vote
-    if (winner == 0) voteCountA++;
-    else if (winner == 1) voteCountB++;
-    else if (winner == 2) voteCountC++;
-
-    updateLEDs();
-    delay(voteDelay);
+    delay(5000);
+    showResults();
+    delay(10000); // 10 second reset time
+    resetVoting();
   }
+
+  checkStopCondition();
 }
 
-void updateLEDs() {
-  digitalWrite(ledA, voteCountA > 0 ? HIGH : LOW);
-  digitalWrite(ledB, voteCountB > 0 ? HIGH : LOW);
-  digitalWrite(ledC, voteCountC > 0 ? HIGH : LOW);
-}
+void showResults() {
+  Serial.println("📊 Round Results:");
+  delay(5000);
+  Serial.print("🔴 A: "); Serial.println(voteCountA);
+  delay(5000);
+  Serial.print("🟢 B: "); Serial.println(voteCountB);
+  delay(5000);
+  Serial.print("🔵 C: "); Serial.println(voteCountC);
+  delay(5000);
 
-void announceResult() {
-  Serial.println("Final Result:");
-  delay(serialDelay);
-  Serial.print("A: "); Serial.println(voteCountA); delay(serialDelay);
-  Serial.print("B: "); Serial.println(voteCountB); delay(serialDelay);
-  Serial.print("C: "); Serial.println(voteCountC); delay(serialDelay);
+  int maxVotes = max(voteCountA, max(voteCountB, voteCountC));
 
-  int maxVote = max(voteCountA, max(voteCountB, voteCountC));
-  int winner = -1;
+  if (voteCountA == maxVotes) {
+    Serial.println("🏆 Winner: A!");
+    digitalWrite(ledA, HIGH);
+  } else if (voteCountB == maxVotes) {
+    Serial.println("🏆 Winner: B!");
+    digitalWrite(ledB, HIGH);
+  } else {
+    Serial.println("🏆 Winner: C!");
+    digitalWrite(ledC, HIGH);
+  }
 
-  if (voteCountA == maxVote) winner = 0;
-  else if (voteCountB == maxVote) winner = 1;
-  else winner = 2;
-
-  Serial.print("Winner is: ");
-  if (winner == 0) Serial.println("A");
-  else if (winner == 1) Serial.println("B");
-  else Serial.println("C");
-
-  delay(serialDelay);
-  beepBuzzer();
   blinkWinnerLED();
-}
-
-void beepBuzzer() {
-  digitalWrite(buzzer, HIGH);
-  delay(500);
-  digitalWrite(buzzer, LOW);
+  playBeep();
 }
 
 void blinkWinnerLED() {
   for (int i = 0; i < 6; i++) {
-    digitalWrite(winnerLED, HIGH);
+    digitalWrite(ledWinner, HIGH);
     delay(300);
-    digitalWrite(winnerLED, LOW);
+    digitalWrite(ledWinner, LOW);
     delay(300);
   }
 }
 
-void resetVotes() {
+void playBeep() {
+  tone(buzzer, 1000);
+  delay(500);
+  noTone(buzzer);
+}
+
+void resetVoting() {
   voteCountA = 0;
   voteCountB = 0;
   voteCountC = 0;
@@ -150,48 +139,35 @@ void resetVotes() {
   digitalWrite(ledA, LOW);
   digitalWrite(ledB, LOW);
   digitalWrite(ledC, LOW);
-  Serial.println("Votes reset");
-  delay(serialDelay);
+  digitalWrite(ledWinner, LOW);
+
+  Serial.println("🔄 System reset for next round!");
+  delay(5000);
 }
 
-bool checkAllButtonsPressedTwice() {
-  static int pressCount[3] = {0, 0, 0};
-  static unsigned long lastCheck = 0;
+void checkStopCondition() {
+  static int consecutivePresses = 0;
+  static unsigned long lastPressTime = 0;
 
-  if (millis() - lastCheck > 200) {
-    if (digitalRead(buttonA) == LOW) pressCount[0]++;
-    if (digitalRead(buttonB) == LOW) pressCount[1]++;
-    if (digitalRead(buttonC) == LOW) pressCount[2]++;
-    lastCheck = millis();
+  if (digitalRead(buttonA) == LOW && digitalRead(buttonB) == LOW && digitalRead(buttonC) == LOW) {
+    if (millis() - lastPressTime > 500) {
+      consecutivePresses++;
+      lastPressTime = millis();
+    }
   }
 
-  if (pressCount[0] >= 2 && pressCount[1] >= 2 && pressCount[2] >= 2) {
-    pressCount[0] = 0;
-    pressCount[1] = 0;
-    pressCount[2] = 0;
-    return true;
+  if (consecutivePresses >= 2) {
+    systemActive = false;
+    Serial.println("🛑 System stopped! Press all buttons once to restart.");
+    delay(5000);
+    consecutivePresses = 0;
   }
-
-  return false;
 }
 
-bool checkAllButtonsPressedOnce() {
-  static int pressCount[3] = {0, 0, 0};
-  static unsigned long lastCheck = 0;
-
-  if (millis() - lastCheck > 200) {
-    if (digitalRead(buttonA) == LOW) pressCount[0]++;
-    if (digitalRead(buttonB) == LOW) pressCount[1]++;
-    if (digitalRead(buttonC) == LOW) pressCount[2]++;
-    lastCheck = millis();
+void checkRestartCondition() {
+  if (digitalRead(buttonA) == LOW && digitalRead(buttonB) == LOW && digitalRead(buttonC) == LOW) {
+    systemActive = true;
+    Serial.println("✅ System restarted! Ready to vote again.");
+    delay(5000);
   }
-
-  if (pressCount[0] >= 1 && pressCount[1] >= 1 && pressCount[2] >= 1) {
-    pressCount[0] = 0;
-    pressCount[1] = 0;
-    pressCount[2] = 0;
-    return true;
-  }
-
-  return false;
 }
